@@ -1,0 +1,10 @@
+{
+  "name": "world-cup-2026-live-match-map",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Auto-updating World Cup 2026 interactive match map for Netlify.",
+  "scripts": {
+    "start": "netlify dev",
+    "deploy": "netlify deploy --prod"
+  }
+}

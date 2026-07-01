@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Interactive World Cup 2026 Match Map</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(10, 23, 42, 0.88);
+      --panel-solid: #0c1830;
+      --text: #ecf4ff;
+      --muted: #9eb2cc;
+      --line: rgba(255,255,255,0.14);
+      --winner: #ffd166;
+      --team: #59c2ff;
+      --live: #ff6b6b;
+      --scheduled: #a0aec0;
+      --complete: #57cc99;
+      --selected: #7dd3fc;
+      --shadow: 0 20px 50px rgba(0,0,0,.35);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #15335e 0, #07111f 42%, #030711 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) 1fr;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    aside {
+      background: linear-gradient(180deg, rgba(12,24,48,.97), rgba(6,14,28,.96));
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+      padding: 18px 16px 28px;
+      box-shadow: var(--shadow);
+      z-index: 5;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      line-height: 1.15;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 6px 0 14px;
+      font-size: .82rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 10px 0 16px;
+    }
+
+    button, .match-link {
+      font: inherit;
+    }
+
+    .tool-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 10px;
+      cursor: pointer;
+      transition: transform .15s ease, background .15s ease, border-color .15s ease;
+    }
+    .tool-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.24); }
+
+    .legend-note {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: .78rem;
+      line-height: 1.35;
+      margin-bottom: 15px;
+    }
+
+    .round {
+      border: 1px solid rgba(255,255,255,0.11);
+      background: rgba(255,255,255,0.045);
+      border-radius: 16px;
+      margin: 0 0 12px;
+      overflow: hidden;
+    }
+
+    .round h2 {
+      margin: 0;
+      padding: 12px 12px 10px;
+      font-size: .88rem;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+      background: rgba(255,255,255,0.055);
+      color: #dbeafe;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .round-count { color: var(--muted); font-weight: 500; font-size: .74rem; text-transform: none; }
+
+    .match-link {
+      display: block;
+      text-decoration: none;
+      color: var(--text);
+      padding: 10px 12px 11px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      transition: background .15s ease, border-color .15s ease;
+      outline: none;
+    }
+    .match-link:hover, .match-link:focus { background: rgba(125,211,252,0.10); }
+    .match-link.selected { background: rgba(125,211,252,0.16); box-shadow: inset 3px 0 0 var(--selected); }
+
+    .match-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin-bottom: 4px;
+    }
+    .match-title { font-weight: 700; font-size: .88rem; line-height: 1.25; }
+    .match-date { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+    .match-meta { color: var(--muted); font-size: .76rem; line-height: 1.35; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .status-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+    .Complete { background: var(--complete); }
+    .Live { background: var(--live); animation: pulse 1.2s infinite ease-in-out; }
+    .Scheduled { background: var(--scheduled); }
+
+    @keyframes pulse { 0%,100% { transform: scale(.85); opacity:.6 } 50% { transform: scale(1.28); opacity:1 } }
+
+    main { position: relative; min-width: 0; }
+    #mapWrap { position: absolute; inset: 0; }
+    svg { width: 100%; height: 100%; display: block; }
+
+    .ocean {
+      fill: url(#oceanGradient);
+    }
+    .country {
+      fill: rgba(174, 205, 243, 0.18);
+      stroke: rgba(255,255,255,.17);
+      stroke-width: .45;
+    }
+    .graticule { fill: none; stroke: rgba(255,255,255,.10); stroke-width: .55; }
+
+    .selected-arc { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.8; stroke-dasharray: 5 7; pointer-events: none; }
+    .team-halo { fill: none; stroke-width: 4; opacity: .92; filter: drop-shadow(0 0 12px rgba(89,194,255,.82)); }
+    .team-dot { stroke: rgba(255,255,255,.9); stroke-width: 2; filter: drop-shadow(0 0 10px rgba(89,194,255,.7)); }
+    .winner-halo { stroke: var(--winner); filter: drop-shadow(0 0 16px rgba(255,209,102,.92)); animation: winnerGlow 1.8s infinite ease-in-out; }
+    .winner-dot { fill: var(--winner); filter: drop-shadow(0 0 18px rgba(255,209,102,.9)); }
+    .team-dot-normal { fill: var(--team); }
+    .loser-dot { fill: #cbd5e1; }
+    .team-label {
+      fill: #ffffff;
+      paint-order: stroke;
+      stroke: rgba(0,0,0,.74);
+      stroke-width: 4px;
+      stroke-linejoin: round;
+      font-size: 13px;
+      font-weight: 750;
+      pointer-events: none;
+    }
+
+    @keyframes winnerGlow { 0%,100% { opacity:.65; r:18px; } 50% { opacity:1; r:25px; } }
+
+    .firework line { stroke: var(--winner); stroke-width: 2.4; stroke-linecap: round; animation: burst 1.35s infinite ease-out; transform-origin: center; opacity: 0; }
+    .firework line:nth-child(2n) { stroke: #ff6b6b; animation-delay: .08s; }
+    .firework line:nth-child(3n) { stroke: #7dd3fc; animation-delay: .16s; }
+    .firework line:nth-child(4n) { stroke: #a7f3d0; animation-delay: .24s; }
+    @keyframes burst { 0% { stroke-dasharray: 0 18; opacity: 0; } 20% { opacity: 1; } 75% { stroke-dasharray: 18 18; opacity: .9; } 100% { stroke-dasharray: 18 18; opacity: 0; } }
+
+    .info-card {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      right: 18px;
+      max-width: 520px;
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      z-index: 4;
+    }
+    .info-kicker { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing:.06em; margin-bottom: 4px; }
+    .info-title { font-size: 1.35rem; font-weight: 850; line-height: 1.1; letter-spacing:-.03em; margin-bottom: 8px; }
+    .info-row { display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: .88rem; margin: 8px 0 0; }
+    .pill { display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(255,255,255,.13); background: rgba(255,255,255,.07); padding:5px 8px; border-radius:999px; color:#dceafe; }
+    .result { color:#fff; font-size: 1rem; margin-top: 12px; line-height:1.35; }
+    .winner-text { color: var(--winner); font-weight: 850; }
+
+    .map-caption {
+      position: absolute;
+      left: 18px;
+      bottom: 18px;
+      right: 18px;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: .75rem;
+      line-height: 1.35;
+      background: rgba(4,10,20,.58);
+      border: 1px solid rgba(255,255,255,.11);
+      padding: 9px 12px;
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+      z-index: 4;
+    }
+
+
+    .live-card {
+      margin: 0 0 14px;
+      padding: 10px 11px;
+      border: 1px solid rgba(125,211,252,.20);
+      border-radius: 14px;
+      background: rgba(14, 39, 72, .58);
+      color: #dceafe;
+      font-size: .78rem;
+      line-height: 1.35;
+    }
+    .live-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin: 3px 0; }
+    .live-label { color: var(--muted); }
+    .live-value { text-align:right; font-weight: 700; }
+    .small-btn {
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+      color: #eef7ff;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: .76rem;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .small-btn:hover { background: rgba(125, 211, 252, .18); }
+    .sync-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:#a0aec0; box-shadow:0 0 0 3px rgba(160,174,192,.12); }
+    .sync-dot.ok { background:#57cc99; box-shadow:0 0 0 3px rgba(87,204,153,.13); }
+    .sync-dot.warn { background:#ffd166; box-shadow:0 0 0 3px rgba(255,209,102,.14); }
+    .sync-dot.bad { background:#ff6b6b; box-shadow:0 0 0 3px rgba(255,107,107,.13); }
+
+    .source-links a { color:#bfdbfe; }
+
+    .fallback-note {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      color: #fef3c7;
+      background: rgba(127, 29, 29, .72);
+      border: 1px solid rgba(254, 202, 202, .3);
+      border-radius: 12px;
+      padding: 9px 11px;
+      font-size: .76rem;
+      max-width: 330px;
+      display: none;
+      z-index: 6;
+    }
+
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      .app { grid-template-columns: 1fr; grid-template-rows: 48vh auto; height: auto; min-height: 100vh; }
+      aside { grid-row: 2; max-height: none; border-right: 0; border-top: 1px solid var(--line); }
+      main { grid-row: 1; min-height: 48vh; }
+      .info-card { font-size: .9rem; top: 10px; left: 10px; right: 10px; padding: 12px; }
+      .info-title { font-size: 1rem; }
+      .map-caption { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside aria-label="World Cup matches legend">
+      <div class="brand">
+        <h1>World Cup 2026 Match Map</h1>
+      </div>
+      <p class="subtitle">Click a match in the round legend. The page auto-refreshes scores, highlights both countries, and shows fireworks on the winning country when a winner is known.</p>
+      <div class="toolbar">
+        <button class="tool-btn" id="zoomTeams">Zoom to teams</button>
+        <button class="tool-btn" id="resetMap">Reset map</button>
+      </div>
+      <div class="live-card" aria-live="polite">
+        <div class="live-row"><span><span class="sync-dot warn" id="syncDot"></span><span id="syncState">Loading live feed…</span></span><button class="small-btn" id="refreshLive" type="button">Refresh now</button></div>
+        <div class="live-row"><span class="live-label">Last checked</span><span class="live-value" id="lastChecked">—</span></div>
+        <div class="live-row"><span class="live-label">Source</span><span class="live-value" id="liveSource">Fallback snapshot</span></div>
+      </div>
+      <div class="legend-note">
+        Times are shown in Hawaii time (UTC−10). This version refreshes live match data about every 60 seconds while the page is open. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
+      </div>
+      <div id="legend"></div>
+    </aside>
+
+    <main>
+      <div id="mapWrap">
+        <svg id="worldMap" role="img" aria-label="Interactive world map showing selected World Cup match countries"></svg>
+      </div>
+      <section class="info-card" id="infoCard" aria-live="polite"></section>
+      <div class="map-caption source-links">
+        Map data: world-atlas via CDN with fallback marker map. Match data refreshes from the live soccer scoreboard feed when available, with an embedded snapshot fallback. Click any country marker or match link to refocus the display.
+      </div>
+      <div class="fallback-note" id="fallbackNote">Map country outlines could not be loaded, so the marker map fallback is active.</div>
+    </main>
+  </div>
+
+<script>
+const generatedAt = "2026-07-01 11:55 AM HST";
+const LIVE_REFRESH_MS = 60_000;
+
+const countryData = {
+  RSA: { name:"South Africa", lat:-30.56, lon:22.94, flag:"🇿🇦" },
+  CAN: { name:"Canada", lat:56.13, lon:-106.35, flag:"🇨🇦" },
+  BRA: { name:"Brazil", lat:-14.24, lon:-51.93, flag:"🇧🇷" },
+  JPN: { name:"Japan", lat:36.20, lon:138.25, flag:"🇯🇵" },
+  GER: { name:"Germany", lat:51.17, lon:10.45, flag:"🇩🇪" },
+  PAR: { name:"Paraguay", lat:-23.44, lon:-58.44, flag:"🇵🇾" },
+  NED: { name:"Netherlands", lat:52.13, lon:5.29, flag:"🇳🇱" },
+  MAR: { name:"Morocco", lat:31.79, lon:-7.09, flag:"🇲🇦" },
+  CIV: { name:"Ivory Coast", lat:7.54, lon:-5.55, flag:"🇨🇮" },
+  NOR: { name:"Norway", lat:60.47, lon:8.47, flag:"🇳🇴" },
+  FRA: { name:"France", lat:46.23, lon:2.21, flag:"🇫🇷" },
+  SWE: { name:"Sweden", lat:60.13, lon:18.64, flag:"🇸🇪" },
+  MEX: { name:"Mexico", lat:23.63, lon:-102.55, flag:"🇲🇽" },
+  ECU: { name:"Ecuador", lat:-1.83, lon:-78.18, flag:"🇪🇨" },
+  ENG: { name:"England", lat:52.36, lon:-1.17, flag:"🏴" },
+  COD: { name:"DR Congo", lat:-2.88, lon:23.65, flag:"🇨🇩" },
+  BEL: { name:"Belgium", lat:50.50, lon:4.47, flag:"🇧🇪" },
+  SEN: { name:"Senegal", lat:14.50, lon:-14.45, flag:"🇸🇳" },
+  USA: { name:"United States", lat:39.83, lon:-98.58, flag:"🇺🇸" },
+  BIH: { name:"Bosnia and Herzegovina", lat:43.92, lon:17.68, flag:"🇧🇦" },
+  ESP: { name:"Spain", lat:40.46, lon:-3.75, flag:"🇪🇸" },
+  AUT: { name:"Austria", lat:47.52, lon:14.55, flag:"🇦🇹" },
+  POR: { name:"Portugal", lat:39.40, lon:-8.22, flag:"🇵🇹" },
+  CRO: { name:"Croatia", lat:45.10, lon:15.20, flag:"🇭🇷" },
+  SUI: { name:"Switzerland", lat:46.82, lon:8.23, flag:"🇨🇭" },
+  DZA: { name:"Algeria", lat:28.03, lon:1.66, flag:"🇩🇿" },
+  AUS: { name:"Australia", lat:-25.27, lon:133.78, flag:"🇦🇺" },
+  EGY: { name:"Egypt", lat:26.82, lon:30.80, flag:"🇪🇬" },
+  ARG: { name:"Argentina", lat:-38.42, lon:-63.62, flag:"🇦🇷" },
+  CPV: { name:"Cape Verde", lat:15.12, lon:-23.61, flag:"🇨🇻" },
+  COL: { name:"Colombia", lat:4.57, lon:-74.30, flag:"🇨🇴" },
+  GHA: { name:"Ghana", lat:7.95, lon:-1.02, flag:"🇬🇭" }
+};
+
+const fallbackMatches = [
+  { id:"53452545", round:"Round of 32", date:"2026-06-28 09:00 AM HST", team1:"RSA", team2:"CAN", status:"Complete", score1:"0", score2:"1", result:"Canada defeated South Africa 1–0.", winner:"CAN", advancesTo:"53452511" },
+  { id:"53452557", round:"Round of 32", date:"2026-06-29 07:00 AM HST", team1:"BRA", team2:"JPN", status:"Complete", score1:"2", score2:"1", result:"Brazil defeated Japan 2–1.", winner:"BRA", advancesTo:"53452517" },
+  { id:"53452541", round:"Round of 32", date:"2026-06-29 10:30 AM HST", team1:"GER", team2:"PAR", status:"Complete", score1:"1 (3 pens)", score2:"1 (4 pens)", result:"Germany and Paraguay finished 1–1; Paraguay advanced 4–3 on penalties.", winner:"PAR", advancesTo:"53452509" },
+  { id:"53452547", round:"Round of 32", date:"2026-06-29 03:00 PM HST", team1:"NED", team2:"MAR", status:"Complete", score1:"1 (2 pens)", score2:"1 (3 pens)", result:"Netherlands and Morocco finished 1–1; Morocco advanced 3–2 on penalties.", winner:"MAR", advancesTo:"53452511" },
+  { id:"53452561", round:"Round of 32", date:"2026-06-30 07:00 AM HST", team1:"CIV", team2:"NOR", status:"Complete", score1:"1", score2:"2", result:"Norway defeated Ivory Coast 2–1.", winner:"NOR", advancesTo:"53452517" },
+  { id:"53452543", round:"Round of 32", date:"2026-06-30 11:00 AM HST", team1:"FRA", team2:"SWE", status:"Complete", score1:"3", score2:"0", result:"France defeated Sweden 3–0.", winner:"FRA", advancesTo:"53452509" },
+  { id:"53452563", round:"Round of 32", date:"2026-06-30 04:00 PM HST", team1:"MEX", team2:"ECU", status:"Complete", score1:"2", score2:"0", result:"Mexico defeated Ecuador 2–0.", winner:"MEX", advancesTo:"53452519" },
+  { id:"53452565", round:"Round of 32", date:"2026-07-01 06:00 AM HST", team1:"ENG", team2:"COD", status:"Complete", score1:"2", score2:"1", result:"England defeated DR Congo 2–1.", winner:"ENG", advancesTo:"53452519" },
+  { id:"53452555", round:"Round of 32", date:"2026-07-01 10:00 AM HST", team1:"BEL", team2:"SEN", status:"Live", score1:"2", score2:"2", result:"Live: Belgium 2 – Senegal 2. No winner is recorded in this snapshot.", winner:null, advancesTo:"53452515" },
+  { id:"53452553", round:"Round of 32", date:"2026-07-01 02:00 PM HST", team1:"USA", team2:"BIH", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452515" },
+  { id:"53452551", round:"Round of 32", date:"2026-07-02 09:00 AM HST", team1:"ESP", team2:"AUT", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452513" },
+  { id:"53452549", round:"Round of 32", date:"2026-07-02 01:00 PM HST", team1:"POR", team2:"CRO", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452513" },
+  { id:"53452505", round:"Round of 32", date:"2026-07-02 05:00 PM HST", team1:"SUI", team2:"DZA", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452523" },
+  { id:"53452503", round:"Round of 32", date:"2026-07-03 08:00 AM HST", team1:"AUS", team2:"EGY", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452521" },
+  { id:"53452569", round:"Round of 32", date:"2026-07-03 12:00 PM HST", team1:"ARG", team2:"CPV", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452521" },
+  { id:"53452507", round:"Round of 32", date:"2026-07-03 03:30 PM HST", team1:"COL", team2:"GHA", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452523" },
+
+  { id:"53452511", round:"Round of 16", date:"2026-07-04 07:00 AM HST", team1:"CAN", team2:"MAR", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452525" },
+  { id:"53452509", round:"Round of 16", date:"2026-07-04 11:00 AM HST", team1:"PAR", team2:"FRA", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452525" },
+  { id:"53452517", round:"Round of 16", date:"2026-07-05 10:00 AM HST", team1:"BRA", team2:"NOR", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452529" },
+  { id:"53452519", round:"Round of 16", date:"2026-07-05 02:00 PM HST", team1:"MEX", team2:"ENG", status:"Scheduled", score1:null, score2:null, result:"Scheduled. Result not available yet in this snapshot.", winner:null, advancesTo:"53452529" },
+  { id:"53452513", round:"Round of 16", date:"2026-07-06 09:00 AM HST", team1:null, team2:null, placeholder:"Winner of Portugal/Croatia vs Winner of Spain/Austria", status:"Scheduled", result:"Scheduled. Participants depend on earlier Round of 32 results.", winner:null, advancesTo:"53452527" },
+  { id:"53452515", round:"Round of 16", date:"2026-07-06 02:00 PM HST", team1:null, team2:null, placeholder:"Winner of USA/Bosnia and Herzegovina vs Winner of Belgium/Senegal", status:"Scheduled", result:"Scheduled. Participants depend on earlier Round of 32 results.", winner:null, advancesTo:"53452527" },
+  { id:"53452521", round:"Round of 16", date:"2026-07-07 06:00 AM HST", team1:null, team2:null, placeholder:"Winner of Argentina/Cape Verde vs Winner of Australia/Egypt", status:"Scheduled", result:"Scheduled. Participants depend on earlier Round of 32 results.", winner:null, advancesTo:"53452531" },
+  { id:"53452523", round:"Round of 16", date:"2026-07-07 10:00 AM HST", team1:null, team2:null, placeholder:"Winner of Switzerland/Algeria vs Winner of Colombia/Ghana", status:"Scheduled", result:"Scheduled. Participants depend on earlier Round of 32 results.", winner:null, advancesTo:"53452531" },
+
+  { id:"53452525", round:"Quarterfinal", date:"2026-07-09 10:00 AM HST", team1:null, team2:null, placeholder:"Winner of Paraguay/France vs Winner of Canada/Morocco", status:"Scheduled", result:"Scheduled. Participants depend on Round of 16 results.", winner:null, advancesTo:"53452533" },
+  { id:"53452527", round:"Quarterfinal", date:"2026-07-10 09:00 AM HST", team1:null, team2:null, placeholder:"Winner of Match 53452513 vs Winner of Match 53452515", status:"Scheduled", result:"Scheduled. Participants depend on Round of 16 results.", winner:null, advancesTo:"53452533" },
+  { id:"53452529", round:"Quarterfinal", date:"2026-07-11 11:00 AM HST", team1:null, team2:null, placeholder:"Winner of Brazil/Norway vs Winner of Mexico/England", status:"Scheduled", result:"Scheduled. Participants depend on Round of 16 results.", winner:null, advancesTo:"53452535" },
+  { id:"53452531", round:"Quarterfinal", date:"2026-07-11 03:00 PM HST", team1:null, team2:null, placeholder:"Winner of Match 53452521 vs Winner of Match 53452523", status:"Scheduled", result:"Scheduled. Participants depend on Round of 16 results.", winner:null, advancesTo:"53452535" },
+
+  { id:"53452533", round:"Semifinal", date:"2026-07-14 09:00 AM HST", team1:null, team2:null, placeholder:"Winner of Quarterfinal 53452525 vs Winner of Quarterfinal 53452527", status:"Scheduled", result:"Scheduled. Winner advances to the Final; loser goes to the third-place playoff.", winner:null, advancesTo:"53452537" },
+  { id:"53452535", round:"Semifinal", date:"2026-07-15 09:00 AM HST", team1:null, team2:null, placeholder:"Winner of Quarterfinal 53452529 vs Winner of Quarterfinal 53452531", status:"Scheduled", result:"Scheduled. Winner advances to the Final; loser goes to the third-place playoff.", winner:null, advancesTo:"53452537" },
+
+  { id:"53452539", round:"3rd Place Playoff", date:"2026-07-18 11:00 AM HST", team1:null, team2:null, placeholder:"Loser of Semifinal 53452533 vs Loser of Semifinal 53452535", status:"Scheduled", result:"Scheduled. Participants depend on semifinal results.", winner:null, advancesTo:null },
+  { id:"53452537", round:"Final", date:"2026-07-19 09:00 AM HST", team1:null, team2:null, placeholder:"Winner of Semifinal 53452533 vs Winner of Semifinal 53452535", status:"Scheduled", result:"Scheduled. Participants depend on semifinal results.", winner:null, advancesTo:null }
+];
+
+
+let matches = fallbackMatches.map(m => ({ ...m }));
+
+const API_ENDPOINTS = [
+  "/api/worldcup",
+  "/.netlify/functions/worldcup",
+  "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=950&dates=20260628-20260719"
+];
+
+const CODE_ALIASES = {
+  ALG: "DZA", ALGERIA: "DZA",
+  DRC: "COD", CGO: "COD", COD: "COD", "CONGO DR": "COD", "CONGO DEMOCRATIC REPUBLIC": "COD", "DR CONGO": "COD",
+  SAF: "RSA", RSA: "RSA", "SOUTH AFRICA": "RSA",
+  USA: "USA", US: "USA", "UNITED STATES": "USA", "UNITED STATES OF AMERICA": "USA",
+  BIH: "BIH", "BOSNIA-HERZEGOVINA": "BIH", "BOSNIA AND HERZEGOVINA": "BIH",
+  CIV: "CIV", "IVORY COAST": "CIV", "COTE D IVOIRE": "CIV", "CÔTE D’IVOIRE": "CIV", "CÔTE D'IVOIRE": "CIV",
+  SUI: "SUI", SWI: "SUI", SWITZERLAND: "SUI",
+  NED: "NED", NLD: "NED", NETHERLANDS: "NED",
+  ENG: "ENG", ENGLAND: "ENG",
+  CPV: "CPV", "CAPE VERDE": "CPV", "CABO VERDE": "CPV",
+  PAR: "PAR", PARAGUAY: "PAR",
+  GER: "GER", DEU: "GER", GERMANY: "GER",
+  BRA: "BRA", BRAZIL: "BRA",
+  JPN: "JPN", JAPAN: "JPN",
+  MAR: "MAR", MOROCCO: "MAR",
+  NOR: "NOR", NORWAY: "NOR",
+  FRA: "FRA", FRANCE: "FRA",
+  SWE: "SWE", SWEDEN: "SWE",
+  MEX: "MEX", MEXICO: "MEX",
+  ECU: "ECU", ECUADOR: "ECU",
+  BEL: "BEL", BELGIUM: "BEL",
+  SEN: "SEN", SENEGAL: "SEN",
+  ESP: "ESP", SPAIN: "ESP",
+  AUT: "AUT", AUSTRIA: "AUT",
+  POR: "POR", PORTUGAL: "POR",
+  CRO: "CRO", CROATIA: "CRO",
+  AUS: "AUS", AUSTRALIA: "AUS",
+  EGY: "EGY", EGYPT: "EGY",
+  ARG: "ARG", ARGENTINA: "ARG",
+  COL: "COL", COLOMBIA: "COL",
+  GHA: "GHA", GHANA: "GHA"
+};
+
+function normalizeName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+const COUNTRY_NAME_TO_CODE = Object.fromEntries(Object.entries(countryData).map(([code, c]) => [normalizeName(c.name), code]));
+for (const [key, value] of Object.entries(CODE_ALIASES)) COUNTRY_NAME_TO_CODE[normalizeName(key)] = value;
+
+function normalizeCode(abbreviation, displayName) {
+  const raw = normalizeName(abbreviation);
+  if (raw && CODE_ALIASES[raw]) return CODE_ALIASES[raw];
+  if (raw && countryData[raw]) return raw;
+  const byName = COUNTRY_NAME_TO_CODE[normalizeName(displayName)];
+  return byName || null;
+}
+
+function formatHst(isoDate) {
+  if (!isoDate) return "Date TBD";
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Pacific/Honolulu",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "numeric", minute: "2-digit", hour12: true
+    }).formatToParts(new Date(isoDate));
+    const get = type => parts.find(p => p.type === type)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} ${get("dayPeriod")} HST`;
+  } catch (e) {
+    return isoDate;
+  }
+}
+
+function formatLastChecked(date = new Date()) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "Pacific/Honolulu",
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true
+    }).format(date) + " HST";
+  } catch (e) {
+    return date.toLocaleString();
+  }
+}
+
+function statusFromEspn(status) {
+  const type = status?.type || {};
+  const state = String(type.state || "").toLowerCase();
+  if (type.completed || state === "post") return "Complete";
+  if (state === "in" || state === "live" || type.name === "STATUS_IN_PROGRESS") return "Live";
+  return "Scheduled";
+}
+
+function parseCompetitor(comp) {
+  const t = comp?.team || {};
+  const code = normalizeCode(t.abbreviation || t.shortDisplayName || t.name, t.displayName || t.name || comp?.displayName);
+  const penalty = comp?.shootoutScore ?? comp?.penaltyScore ?? comp?.penalties;
+  let score = comp?.score;
+  if (score === undefined || score === null || score === "") score = null;
+  if (score !== null && penalty !== undefined && penalty !== null && penalty !== "") score = `${score} (${penalty} pens)`;
+  return {
+    code,
+    displayName: t.displayName || t.shortDisplayName || t.name || comp?.displayName || "TBD",
+    score,
+    winner: comp?.winner === true
+  };
+}
+
+function pickOrderedCompetitors(parsed, meta) {
+  const known = parsed.filter(p => p.code);
+  if (meta?.team1 && meta?.team2) {
+    const p1 = known.find(p => p.code === meta.team1);
+    const p2 = known.find(p => p.code === meta.team2);
+    if (p1 && p2) return [p1, p2];
+  }
+  return parsed.slice(0, 2);
+}
+
+function buildResultText(m) {
+  if (!m.team1 || !m.team2) return m.result || "Scheduled. Participants depend on earlier results.";
+  if (m.status === "Live" && m.score1 != null && m.score2 != null) return `Live: ${teamName(m.team1)} ${m.score1} – ${m.score2} ${teamName(m.team2)}.`;
+  if (m.status === "Complete" && m.score1 != null && m.score2 != null) {
+    if (m.winner && String(m.score1).split(" ")[0] === String(m.score2).split(" ")[0]) {
+      return `${teamName(m.team1)} and ${teamName(m.team2)} finished ${m.score1}–${m.score2}; ${teamName(m.winner)} advanced.`;
+    }
+    if (m.winner) return `${teamName(m.winner)} defeated ${m.winner === m.team1 ? teamName(m.team2) : teamName(m.team1)} ${m.winner === m.team1 ? `${m.score1}–${m.score2}` : `${m.score2}–${m.score1}`}.`;
+    return `${teamName(m.team1)} ${m.score1} – ${m.score2} ${teamName(m.team2)}.`;
+  }
+  return "Scheduled. Result not available yet.";
+}
+
+function transformEspnScoreboard(raw) {
+  const payload = raw?.payload || raw;
+  const events = payload?.events || [];
+  const staticMetaById = Object.fromEntries(fallbackMatches.map(m => [String(m.id), m]));
+  const out = [];
+  for (const event of events) {
+    const id = String(event.id || event.uid || "");
+    const meta = staticMetaById[id];
+    if (!meta) continue;
+    const competition = event.competitions?.[0] || {};
+    const parsed = (competition.competitors || []).map(parseCompetitor);
+    const ordered = pickOrderedCompetitors(parsed, meta);
+    const team1 = ordered[0]?.code || meta.team1 || null;
+    const team2 = ordered[1]?.code || meta.team2 || null;
+    const score1 = ordered[0]?.score ?? null;
+    const score2 = ordered[1]?.score ?? null;
+    const winnerParsed = parsed.find(p => p.winner && p.code);
+    const status = statusFromEspn(competition.status || event.status);
+    const match = {
+      ...meta,
+      id,
+      date: formatHst(event.date || competition.date || meta.date),
+      team1,
+      team2,
+      status,
+      score1,
+      score2,
+      winner: status === "Complete" ? (winnerParsed?.code || meta.winner || null) : (winnerParsed?.code || null)
+    };
+    if (!match.team1 || !match.team2) match.placeholder = meta.placeholder || event.name || event.shortName || "TBD vs TBD";
+    match.result = buildResultText(match);
+    out.push(match);
+  }
+  return out;
+}
+
+function mergeMatches(baseMatches, liveMatches) {
+  const byId = new Map(baseMatches.map(m => [String(m.id), { ...m }]));
+  for (const live of liveMatches || []) {
+    if (!live?.id || !byId.has(String(live.id))) continue;
+    byId.set(String(live.id), { ...byId.get(String(live.id)), ...live });
+  }
+  return baseMatches.map(m => byId.get(String(m.id)) || m);
+}
+
+function updateSyncUi(state, message, source = "Fallback snapshot") {
+  const dot = document.getElementById("syncDot");
+  const stateEl = document.getElementById("syncState");
+  const checkedEl = document.getElementById("lastChecked");
+  const sourceEl = document.getElementById("liveSource");
+  if (!dot || !stateEl) return;
+  dot.className = `sync-dot ${state}`;
+  stateEl.textContent = message;
+  checkedEl.textContent = formatLastChecked();
+  sourceEl.textContent = source;
+}
+
+async function fetchLivePayload() {
+  let lastError = null;
+  for (const endpoint of API_ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const raw = await res.json();
+      const liveMatches = raw?.sourceType === "espnScoreboard" ? transformEspnScoreboard(raw.payload) : transformEspnScoreboard(raw);
+      if (!liveMatches.length) throw new Error("No recognizable knockout matches returned");
+      return { liveMatches, source: endpoint.includes("netlify") || endpoint.includes("/api/") ? "ESPN via Netlify function" : "ESPN direct scoreboard" };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Live feed unavailable");
+}
+
+async function refreshLiveMatches({ manual = false } = {}) {
+  updateSyncUi("warn", manual ? "Refreshing live feed…" : "Checking live feed…", "Fallback snapshot");
+  try {
+    const currentId = selectedMatch?.id || getInitialMatchId();
+    const { liveMatches, source } = await fetchLivePayload();
+    matches = mergeMatches(fallbackMatches, liveMatches);
+    buildLegend();
+    const nextId = matches.some(m => m.id === currentId) ? currentId : getInitialMatchId();
+    selectMatch(nextId);
+    const liveCount = matches.filter(m => m.status === "Live").length;
+    updateSyncUi("ok", liveCount ? `${liveCount} live match${liveCount === 1 ? "" : "es"}; auto-refresh on` : "Auto-refresh on", source);
+  } catch (err) {
+    console.warn("Live update failed:", err);
+    updateSyncUi("bad", "Live feed unavailable; using snapshot", "Fallback snapshot");
+  }
+}
+
+function startAutoUpdates() {
+  document.getElementById("refreshLive")?.addEventListener("click", () => refreshLiveMatches({ manual: true }));
+  refreshLiveMatches();
+  window.setInterval(refreshLiveMatches, LIVE_REFRESH_MS);
+}
+
+const roundOrder = ["Round of 32", "Round of 16", "Quarterfinal", "Semifinal", "3rd Place Playoff", "Final"];
+const mapSvg = d3.select("#worldMap");
+const width = 1200;
+const height = 680;
+mapSvg.attr("viewBox", `0 0 ${width} ${height}`).attr("preserveAspectRatio", "xMidYMid meet");
+
+const defs = mapSvg.append("defs");
+defs.append("radialGradient")
+  .attr("id", "oceanGradient")
+  .selectAll("stop")
+  .data([
+    { offset:"0%", color:"#164576" },
+    { offset:"58%", color:"#0b2142" },
+    { offset:"100%", color:"#06111f" }
+  ])
+  .join("stop")
+  .attr("offset", d => d.offset)
+  .attr("stop-color", d => d.color);
+
+mapSvg.append("rect").attr("class", "ocean").attr("width", width).attr("height", height).attr("rx", 0);
+
+const rootG = mapSvg.append("g").attr("class", "root");
+const mapG = rootG.append("g").attr("class", "map");
+const arcG = rootG.append("g").attr("class", "arcs");
+const markerG = rootG.append("g").attr("class", "markers");
+const fireworkG = rootG.append("g").attr("class", "fireworks");
+
+let projection = d3.geoNaturalEarth1().scale(205).translate([width/2, height/2 + 30]);
+let path = d3.geoPath(projection);
+let selectedMatch = null;
+let lastTransform = d3.zoomIdentity;
+let countryMapLoaded = false;
+
+function fallbackProject(lon, lat) {
+  const x = (lon + 180) / 360 * width;
+  const y = (90 - lat) / 180 * height;
+  return [x, y];
+}
+
+function projectCountry(code) {
+  const c = countryData[code];
+  if (!c) return null;
+  try {
+    const p = countryMapLoaded && projection ? projection([c.lon, c.lat]) : fallbackProject(c.lon, c.lat);
+    return p && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? p : fallbackProject(c.lon, c.lat);
+  } catch (e) {
+    return fallbackProject(c.lon, c.lat);
+  }
+}
+
+function drawFallbackGrid() {
+  const graticules = [];
+  for (let lon=-180; lon<=180; lon+=30) graticules.push({type:"lon", value:lon});
+  for (let lat=-60; lat<=60; lat+=30) graticules.push({type:"lat", value:lat});
+  mapG.selectAll("line.fallback-grid").data(graticules).join("line")
+    .attr("class", "graticule fallback-grid")
+    .attr("x1", d => d.type === "lon" ? fallbackProject(d.value, -80)[0] : fallbackProject(-180, d.value)[0])
+    .attr("y1", d => d.type === "lon" ? fallbackProject(d.value, -80)[1] : fallbackProject(-180, d.value)[1])
+    .attr("x2", d => d.type === "lon" ? fallbackProject(d.value, 80)[0] : fallbackProject(180, d.value)[0])
+    .attr("y2", d => d.type === "lon" ? fallbackProject(d.value, 80)[1] : fallbackProject(180, d.value)[1]);
+}
+
+async function loadMap() {
+  try {
+    const world = await d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json");
+    const countries = topojson.feature(world, world.objects.countries);
+    mapG.append("path").datum(d3.geoGraticule10()).attr("class", "graticule").attr("d", path);
+    mapG.selectAll("path.country")
+      .data(countries.features)
+      .join("path")
+      .attr("class", "country")
+      .attr("d", path);
+    countryMapLoaded = true;
+  } catch (e) {
+    countryMapLoaded = false;
+    document.getElementById("fallbackNote").style.display = "block";
+    drawFallbackGrid();
+  } finally {
+    selectMatch(getInitialMatchId());
+  }
+}
+
+const zoom = d3.zoom()
+  .scaleExtent([1, 7])
+  .on("zoom", (event) => {
+    lastTransform = event.transform;
+    rootG.attr("transform", lastTransform);
+  });
+mapSvg.call(zoom);
+
+function teamName(code) {
+  return countryData[code]?.name || "TBD";
+}
+function teamFlag(code) {
+  return countryData[code]?.flag || "";
+}
+function matchLabel(m) {
+  if (m.team1 && m.team2) return `${teamName(m.team1)} vs ${teamName(m.team2)}`;
+  return m.placeholder || "TBD vs TBD";
+}
+function compactScore(m) {
+  if (m.score1 != null && m.score2 != null && m.team1 && m.team2) return `${m.score1}–${m.score2}`;
+  return m.status;
+}
+function scoreLine(m) {
+  if (m.team1 && m.team2 && m.score1 != null && m.score2 != null) {
+    return `${teamFlag(m.team1)} ${teamName(m.team1)} ${m.score1} – ${m.score2} ${teamName(m.team2)} ${teamFlag(m.team2)}`;
+  }
+  return m.result;
+}
+
+function buildLegend() {
+  const container = document.getElementById("legend");
+  container.innerHTML = "";
+  for (const round of roundOrder) {
+    const roundMatches = matches.filter(m => m.round === round);
+    if (!roundMatches.length) continue;
+    const section = document.createElement("section");
+    section.className = "round";
+    const h = document.createElement("h2");
+    h.innerHTML = `<span>${round}</span><span class="round-count">${roundMatches.length} match${roundMatches.length === 1 ? "" : "es"}</span>`;
+    section.appendChild(h);
+    for (const m of roundMatches) {
+      const a = document.createElement("a");
+      a.className = "match-link";
+      a.href = `#${m.id}`;
+      a.dataset.matchId = m.id;
+      a.innerHTML = `
+        <div class="match-top">
+          <span class="match-title">${matchLabel(m)}</span>
+          <span class="match-date">${m.date.replace("2026-", "").replace(" HST", "")}</span>
+        </div>
+        <div class="match-meta"><span class="status-dot ${m.status}"></span><span>${m.status}</span><span>${compactScore(m)}</span></div>
+      `;
+      a.addEventListener("click", ev => {
+        ev.preventDefault();
+        history.replaceState(null, "", `#${m.id}`);
+        selectMatch(m.id, true);
+      });
+      section.appendChild(a);
+    }
+    container.appendChild(section);
+  }
+}
+
+function renderInfo(m) {
+  const winner = m.winner ? `<span class="winner-text">Winner: ${teamFlag(m.winner)} ${teamName(m.winner)}</span>` : `<span>No winner recorded yet</span>`;
+  const advance = m.advancesTo ? `<span class="pill">Advances to match ${m.advancesTo}</span>` : "";
+  const statusClass = m.status;
+  document.getElementById("infoCard").innerHTML = `
+    <div class="info-kicker">${m.round} · Match ${m.id}</div>
+    <div class="info-title">${matchLabel(m)}</div>
+    <div class="info-row">
+      <span class="pill"><span class="status-dot ${statusClass}"></span>${m.status}</span>
+      <span class="pill">${m.date}</span>
+      ${advance}
+    </div>
+    <div class="result">${scoreLine(m)}</div>
+    <div class="info-row">${winner}</div>
+  `;
+}
+
+function makeArc(p1, p2) {
+  const mx = (p1[0] + p2[0]) / 2;
+  const my = (p1[1] + p2[1]) / 2;
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const lift = Math.min(120, Math.max(36, dist * .18));
+  return `M${p1[0]},${p1[1]} Q${mx},${my - lift} ${p2[0]},${p2[1]}`;
+}
+
+function drawMarkers(m) {
+  markerG.selectAll("*").remove();
+  fireworkG.selectAll("*").remove();
+  arcG.selectAll("*").remove();
+  const codes = [m.team1, m.team2].filter(Boolean);
+  const points = codes.map(code => ({ code, p: projectCountry(code) })).filter(d => d.p);
+  if (points.length === 2) {
+    arcG.append("path").attr("class", "selected-arc").attr("d", makeArc(points[0].p, points[1].p));
+  }
+  for (const { code, p } of points) {
+    const isWinner = code === m.winner;
+    const isLoserKnown = m.winner && code !== m.winner;
+    const g = markerG.append("g")
+      .attr("class", "team-marker")
+      .attr("transform", `translate(${p[0]},${p[1]})`)
+      .style("cursor", "pointer")
+      .on("click", () => selectMatch(m.id, true));
+    g.append("circle")
+      .attr("class", `team-halo ${isWinner ? "winner-halo" : ""}`)
+      .attr("r", isWinner ? 23 : 17)
+      .attr("stroke", isWinner ? "var(--winner)" : "var(--team)");
+    g.append("circle")
+      .attr("class", `team-dot ${isWinner ? "winner-dot" : isLoserKnown ? "loser-dot" : "team-dot-normal"}`)
+      .attr("r", isWinner ? 9 : 7);
+    g.append("text")
+      .attr("class", "team-label")
+      .attr("x", 13)
+      .attr("y", -12)
+      .text(`${teamFlag(code)} ${teamName(code)}`);
+    if (isWinner) drawFirework(p[0], p[1] - 28);
+  }
+}
+
+function drawFirework(x, y) {
+  const bursts = [
+    {x, y}, {x:x+34, y:y-20}, {x:x-35, y:y-14}
+  ];
+  bursts.forEach((b, bi) => {
+    const g = fireworkG.append("g").attr("class", "firework").attr("transform", `translate(${b.x},${b.y})`);
+    const rays = d3.range(12).map(i => i * Math.PI * 2 / 12);
+    g.selectAll("line").data(rays).join("line")
+      .attr("x1", 0).attr("y1", 0)
+      .attr("x2", a => Math.cos(a) * (bi === 0 ? 30 : 22))
+      .attr("y2", a => Math.sin(a) * (bi === 0 ? 30 : 22))
+      .style("animation-delay", (_, i) => `${bi * .18 + i * .015}s`);
+  });
+}
+
+function zoomToCurrent() {
+  if (!selectedMatch) return;
+  const pts = [selectedMatch.team1, selectedMatch.team2].filter(Boolean).map(projectCountry).filter(Boolean);
+  if (!pts.length) {
+    mapSvg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+    return;
+  }
+  let x0 = d3.min(pts, d => d[0]), x1 = d3.max(pts, d => d[0]);
+  let y0 = d3.min(pts, d => d[1]), y1 = d3.max(pts, d => d[1]);
+  const pad = 160;
+  x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+  const dx = Math.max(1, x1 - x0), dy = Math.max(1, y1 - y0);
+  const scale = Math.min(4.2, Math.max(1.2, 0.85 / Math.max(dx / width, dy / height)));
+  const tx = width / 2 - scale * (x0 + x1) / 2;
+  const ty = height / 2 - scale * (y0 + y1) / 2;
+  mapSvg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+function selectMatch(id, shouldZoom = false) {
+  const m = matches.find(x => x.id === id) || matches[0];
+  selectedMatch = m;
+  document.querySelectorAll(".match-link").forEach(a => a.classList.toggle("selected", a.dataset.matchId === m.id));
+  const selectedLink = document.querySelector(`.match-link[data-match-id="${m.id}"]`);
+  if (selectedLink && shouldZoom) selectedLink.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  renderInfo(m);
+  drawMarkers(m);
+  if (shouldZoom) zoomToCurrent();
+}
+
+function getInitialMatchId() {
+  const hash = location.hash.replace("#", "");
+  if (matches.some(m => m.id === hash)) return hash;
+  const live = matches.find(m => m.status === "Live");
+  if (live) return live.id;
+  const next = matches.find(m => m.status === "Scheduled");
+  return next ? next.id : matches[0].id;
+}
+
+window.addEventListener("hashchange", () => {
+  const id = location.hash.replace("#", "");
+  if (matches.some(m => m.id === id)) selectMatch(id, true);
+});
+
+document.getElementById("resetMap").addEventListener("click", () => mapSvg.transition().duration(650).call(zoom.transform, d3.zoomIdentity));
+document.getElementById("zoomTeams").addEventListener("click", zoomToCurrent);
+
+buildLegend();
+loadMap();
+startAutoUpdates();
+</script>
+</body>
+</html>
