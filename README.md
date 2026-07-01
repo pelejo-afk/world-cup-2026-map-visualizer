@@ -11,30 +11,47 @@ This is a free, Netlify-ready version of the interactive World Cup 2026 match ma
 - Shows fireworks over the winner when a winner is known.
 - Falls back to the embedded schedule snapshot if the live feed is unavailable.
 
-## How the live update works
+## Required hosting
 
-The browser calls `/api/worldcup`, which Netlify redirects to `/.netlify/functions/worldcup`.
-The Netlify function fetches ESPN's public FIFA World Cup scoreboard JSON and returns it to the page.
+Use Netlify for the live auto-update version. GitHub Pages by itself will show the map, but it will not run the serverless function needed at `/api/worldcup`.
 
-ESPN's public scoreboard endpoint is undocumented, so it can change. The page has fallback data so it will still display even if the feed fails.
+## Files that must be in GitHub
 
-## Free deployment path
+Keep this exact structure:
 
-1. Create a free GitHub repository.
-2. Upload all files and folders in this package. Keep `index.html`, `netlify.toml`, `package.json`, and the `netlify/functions/worldcup.js` path exactly as-is.
-3. Create a free Netlify account.
-4. In Netlify, choose **Add new site → Import an existing project**.
-5. Connect the GitHub repo.
-6. Use the default build settings. No build command is needed. Publish directory should be `.`.
-7. Deploy.
-
-## Local testing
-
-If you have Node.js and the Netlify CLI installed:
-
-```bash
-npm install -g netlify-cli
-netlify dev
+```text
+index.html
+netlify.toml
+package.json
+README.md
+netlify/functions/worldcup.js
 ```
 
-Then open the local Netlify URL shown in your terminal.
+Do not upload only the ZIP file. Extract the ZIP and upload the files/folders.
+
+## Netlify build settings
+
+- Branch: `main`
+- Base directory: leave blank
+- Build command: leave blank
+- Publish directory: `.`
+
+The included `netlify.toml` tells Netlify where the function lives.
+
+## Testing the live feed
+
+After deployment, open this URL, replacing the domain with your site:
+
+```text
+https://YOUR-SITE.netlify.app/api/worldcup
+```
+
+Expected result: JSON with `sourceType`, `eventCount`, `attempts`, and `payload.events`.
+
+If you see `Page not found`, the Netlify function did not deploy. Check that `netlify/functions/worldcup.js` exists in GitHub and redeploy from Netlify.
+
+If you see JSON with an `error` and `attempts`, the function deployed but ESPN did not return usable events at that moment. The page will keep showing the saved snapshot until the endpoint works again.
+
+## How the live update works
+
+The browser calls `/api/worldcup`, which Netlify redirects to `/.netlify/functions/worldcup`. The Netlify function fetches ESPN's public FIFA World Cup scoreboard JSON and returns it to the page. ESPN's endpoint is public/keyless but undocumented, so this v2 function tries multiple scoreboard URL formats and returns diagnostics if all fail.

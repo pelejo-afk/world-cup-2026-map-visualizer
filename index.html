@@ -628,7 +628,7 @@ async function refreshLiveMatches({ manual = false } = {}) {
     updateSyncUi("ok", liveCount ? `${liveCount} live match${liveCount === 1 ? "" : "es"}; auto-refresh on` : "Auto-refresh on", source);
   } catch (err) {
     console.warn("Live update failed:", err);
-    updateSyncUi("bad", "Live feed unavailable; using snapshot", "Fallback snapshot");
+    updateSyncUi("bad", "Live feed unavailable; using saved snapshot", "Fallback snapshot");
   }
 }
 
