@@ -310,7 +310,7 @@
         <div class="live-row"><span class="live-label">Source</span><span class="live-value" id="liveSource">Fallback snapshot</span></div>
       </div>
       <div class="legend-note">
-        Times are shown in Hawaii time (UTC−10). This version refreshes live match data about every 60 seconds while the page is open. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
+        Times are shown in Hawaii time (UTC−10). This V3 version refreshes live match data about every 60 seconds while the page is open and can match live events by team names if outside event IDs change. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
       </div>
       <div id="legend"></div>
     </aside>
@@ -541,17 +541,35 @@ function buildResultText(m) {
   return "Scheduled. Result not available yet.";
 }
 
+function findMetaForEspnEvent(event, parsed, staticMetaById) {
+  // Prefer exact ESPN/game id matches when available.
+  const eventId = String(event?.id || event?.uid || "");
+  if (eventId && staticMetaById[eventId]) return staticMetaById[eventId];
+
+  // ESPN can change event ids between feeds. Fall back to matching the two teams.
+  const codes = parsed.map(p => p.code).filter(Boolean);
+  if (codes.length >= 2) {
+    const [a, b] = codes;
+    const teamPairMatch = fallbackMatches.find(m =>
+      m.team1 && m.team2 &&
+      ((m.team1 === a && m.team2 === b) || (m.team1 === b && m.team2 === a))
+    );
+    if (teamPairMatch) return teamPairMatch;
+  }
+
+  return null;
+}
+
 function transformEspnScoreboard(raw) {
   const payload = raw?.payload || raw;
   const events = payload?.events || [];
   const staticMetaById = Object.fromEntries(fallbackMatches.map(m => [String(m.id), m]));
   const out = [];
   for (const event of events) {
-    const id = String(event.id || event.uid || "");
-    const meta = staticMetaById[id];
-    if (!meta) continue;
     const competition = event.competitions?.[0] || {};
     const parsed = (competition.competitors || []).map(parseCompetitor);
+    const meta = findMetaForEspnEvent(event, parsed, staticMetaById);
+    if (!meta) continue;
     const ordered = pickOrderedCompetitors(parsed, meta);
     const team1 = ordered[0]?.code || meta.team1 || null;
     const team2 = ordered[1]?.code || meta.team2 || null;
@@ -561,7 +579,10 @@ function transformEspnScoreboard(raw) {
     const status = statusFromEspn(competition.status || event.status);
     const match = {
       ...meta,
-      id,
+      // Keep the saved map id so the match legend, map selection, and merge logic keep working
+      // even if the outside scoreboard feed uses a different event id.
+      id: String(meta.id),
+      externalId: String(event.id || event.uid || ""),
       date: formatHst(event.date || competition.date || meta.date),
       team1,
       team2,
