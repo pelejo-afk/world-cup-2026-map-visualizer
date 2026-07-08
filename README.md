@@ -7,6 +7,7 @@ This is a free, Netlify-ready version of the interactive World Cup 2026 match ma
 - Shows the World Cup 2026 knockout matches on a global map.
 - Groups clickable match links by round.
 - Auto-refreshes live scores/results about every 60 seconds while the page is open.
+- Shows team rankings in the match list, details panel, and map labels.
 - Highlights both countries for the selected match.
 - Shows fireworks over the winner when a winner is known.
 - Falls back to the embedded schedule snapshot if the live feed is unavailable.
@@ -57,7 +58,7 @@ If you see JSON with an `error` and `attempts`, the function deployed but ESPN d
 The browser calls `/api/worldcup`, which Netlify redirects to `/.netlify/functions/worldcup`. The Netlify function fetches ESPN's public FIFA World Cup scoreboard JSON and returns it to the page. ESPN's endpoint is public/keyless but undocumented, so this v2 function tries multiple scoreboard URL formats and returns diagnostics if all fail.
 
 
-## V4 fix notes
+## V5 fix notes
 
 This version keeps using the Netlify Function at `/api/worldcup`, but the browser code now matches outside scoreboard events by team pair if the outside feed uses different match IDs. It also includes a root `_redirects` file in addition to `netlify.toml` so Netlify has an explicit `/api/worldcup` rewrite.
 
@@ -69,6 +70,18 @@ After deploying, test both of these URLs:
 If either URL returns JSON, the function is deployed. If both return Page not found, the `netlify/functions/worldcup.js` file is missing, in the wrong folder, or the site was not redeployed from the updated GitHub repository.
 
 
-## V4 note
+## V5 note
 
 This version propagates winners forward into future-round placeholders, so when a source match becomes complete and has a winner, the next match label updates from “Winner of …” to the actual country matchup.
+
+
+## V5 note
+
+V5 updates the Netlify function so it fetches every tournament date individually, not just today/yesterday/tomorrow. This helps later-round matchups update after earlier completed matches.
+
+
+## V6 note
+
+V6 adds a static rankings layer to `countryData`. The page now displays each known team's ranking in the left-side match list, the selected-match details card, and the marker labels on the map. Live scores and future-round propagation still update through the Netlify function, while rankings remain embedded in the HTML and can be updated manually in `countryData`.
+
+Ranking source used for this build: FIFA Football Rankings table as of 08/07/26. Lower numbers are better. For teams outside the top 50, the available source provided rank only, so points may show as `points N/A`.

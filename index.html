@@ -217,6 +217,8 @@
     .pill { display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(255,255,255,.13); background: rgba(255,255,255,.07); padding:5px 8px; border-radius:999px; color:#dceafe; }
     .result { color:#fff; font-size: 1rem; margin-top: 12px; line-height:1.35; }
     .winner-text { color: var(--winner); font-weight: 850; }
+    .rank-pill { border-color: rgba(255,209,102,.34); background: rgba(255,209,102,.11); color: #ffe7a3; font-weight: 750; }
+    .rank-compare { color: #dbeafe; font-weight: 700; }
 
     .map-caption {
       position: absolute;
@@ -310,7 +312,7 @@
         <div class="live-row"><span class="live-label">Source</span><span class="live-value" id="liveSource">Fallback snapshot</span></div>
       </div>
       <div class="legend-note">
-        Times are shown in Hawaii time (UTC−10). This V5 version refreshes live match data about every 60 seconds while the page is open, checks every World Cup matchday through the Netlify function, matches live events by team names or kickoff time if outside event IDs change, and rebuilds future-round matchups from winners when results become available. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
+        Times are shown in Hawaii time (UTC−10). This V6 version refreshes live match data about every 60 seconds while the page is open, checks every World Cup matchday through the Netlify function, matches live events by team names or kickoff time if outside event IDs change, rebuilds future-round matchups from winners, and displays team rankings in the match list, details panel, and map labels. Rankings are a static layer from the current FIFA football rankings table and can be updated in the countryData section.
       </div>
       <div id="legend"></div>
     </aside>
@@ -332,38 +334,38 @@ const generatedAt = "2026-07-01 11:55 AM HST";
 const LIVE_REFRESH_MS = 60_000;
 
 const countryData = {
-  RSA: { name:"South Africa", lat:-30.56, lon:22.94, flag:"🇿🇦" },
-  CAN: { name:"Canada", lat:56.13, lon:-106.35, flag:"🇨🇦" },
-  BRA: { name:"Brazil", lat:-14.24, lon:-51.93, flag:"🇧🇷" },
-  JPN: { name:"Japan", lat:36.20, lon:138.25, flag:"🇯🇵" },
-  GER: { name:"Germany", lat:51.17, lon:10.45, flag:"🇩🇪" },
-  PAR: { name:"Paraguay", lat:-23.44, lon:-58.44, flag:"🇵🇾" },
-  NED: { name:"Netherlands", lat:52.13, lon:5.29, flag:"🇳🇱" },
-  MAR: { name:"Morocco", lat:31.79, lon:-7.09, flag:"🇲🇦" },
-  CIV: { name:"Ivory Coast", lat:7.54, lon:-5.55, flag:"🇨🇮" },
-  NOR: { name:"Norway", lat:60.47, lon:8.47, flag:"🇳🇴" },
-  FRA: { name:"France", lat:46.23, lon:2.21, flag:"🇫🇷" },
-  SWE: { name:"Sweden", lat:60.13, lon:18.64, flag:"🇸🇪" },
-  MEX: { name:"Mexico", lat:23.63, lon:-102.55, flag:"🇲🇽" },
-  ECU: { name:"Ecuador", lat:-1.83, lon:-78.18, flag:"🇪🇨" },
-  ENG: { name:"England", lat:52.36, lon:-1.17, flag:"🏴" },
-  COD: { name:"DR Congo", lat:-2.88, lon:23.65, flag:"🇨🇩" },
-  BEL: { name:"Belgium", lat:50.50, lon:4.47, flag:"🇧🇪" },
-  SEN: { name:"Senegal", lat:14.50, lon:-14.45, flag:"🇸🇳" },
-  USA: { name:"United States", lat:39.83, lon:-98.58, flag:"🇺🇸" },
-  BIH: { name:"Bosnia and Herzegovina", lat:43.92, lon:17.68, flag:"🇧🇦" },
-  ESP: { name:"Spain", lat:40.46, lon:-3.75, flag:"🇪🇸" },
-  AUT: { name:"Austria", lat:47.52, lon:14.55, flag:"🇦🇹" },
-  POR: { name:"Portugal", lat:39.40, lon:-8.22, flag:"🇵🇹" },
-  CRO: { name:"Croatia", lat:45.10, lon:15.20, flag:"🇭🇷" },
-  SUI: { name:"Switzerland", lat:46.82, lon:8.23, flag:"🇨🇭" },
-  DZA: { name:"Algeria", lat:28.03, lon:1.66, flag:"🇩🇿" },
-  AUS: { name:"Australia", lat:-25.27, lon:133.78, flag:"🇦🇺" },
-  EGY: { name:"Egypt", lat:26.82, lon:30.80, flag:"🇪🇬" },
-  ARG: { name:"Argentina", lat:-38.42, lon:-63.62, flag:"🇦🇷" },
-  CPV: { name:"Cape Verde", lat:15.12, lon:-23.61, flag:"🇨🇻" },
-  COL: { name:"Colombia", lat:4.57, lon:-74.30, flag:"🇨🇴" },
-  GHA: { name:"Ghana", lat:7.95, lon:-1.02, flag:"🇬🇭" }
+  RSA: { name:"South Africa", lat:-30.56, lon:22.94, flag:"🇿🇦", rank:60 },
+  CAN: { name:"Canada", lat:56.13, lon:-106.35, flag:"🇨🇦", rank:30, points:1559.48 },
+  BRA: { name:"Brazil", lat:-14.24, lon:-51.93, flag:"🇧🇷", rank:6, points:1765.86 },
+  JPN: { name:"Japan", lat:36.20, lon:138.25, flag:"🇯🇵", rank:18, points:1661.58 },
+  GER: { name:"Germany", lat:51.17, lon:10.45, flag:"🇩🇪", rank:10, points:1735.77 },
+  PAR: { name:"Paraguay", lat:-23.44, lon:-58.44, flag:"🇵🇾", rank:41, points:1505.35 },
+  NED: { name:"Netherlands", lat:52.13, lon:5.29, flag:"🇳🇱", rank:8, points:1753.57 },
+  MAR: { name:"Morocco", lat:31.79, lon:-7.09, flag:"🇲🇦", rank:7, points:1755.10 },
+  CIV: { name:"Ivory Coast", lat:7.54, lon:-5.55, flag:"🇨🇮", rank:33, points:1540.87 },
+  NOR: { name:"Norway", lat:60.47, lon:8.47, flag:"🇳🇴", rank:31, points:1557.44 },
+  FRA: { name:"France", lat:46.23, lon:2.21, flag:"🇫🇷", rank:3, points:1870.70 },
+  SWE: { name:"Sweden", lat:60.13, lon:18.64, flag:"🇸🇪", rank:38, points:1509.79 },
+  MEX: { name:"Mexico", lat:23.63, lon:-102.55, flag:"🇲🇽", rank:14, points:1687.48 },
+  ECU: { name:"Ecuador", lat:-1.83, lon:-78.18, flag:"🇪🇨", rank:23, points:1598.52 },
+  ENG: { name:"England", lat:52.36, lon:-1.17, flag:"🏴", rank:4, points:1828.02 },
+  COD: { name:"DR Congo", lat:-2.88, lon:23.65, flag:"🇨🇩", rank:46, points:1474.43 },
+  BEL: { name:"Belgium", lat:50.50, lon:4.47, flag:"🇧🇪", rank:9, points:1742.24 },
+  SEN: { name:"Senegal", lat:14.50, lon:-14.45, flag:"🇸🇳", rank:15, points:1684.07 },
+  USA: { name:"United States", lat:39.83, lon:-98.58, flag:"🇺🇸", rank:17, points:1671.23 },
+  BIH: { name:"Bosnia and Herzegovina", lat:43.92, lon:17.68, flag:"🇧🇦", rank:64 },
+  ESP: { name:"Spain", lat:40.46, lon:-3.75, flag:"🇪🇸", rank:2, points:1874.71 },
+  AUT: { name:"Austria", lat:47.52, lon:14.55, flag:"🇦🇹", rank:24, points:1597.40 },
+  POR: { name:"Portugal", lat:39.40, lon:-8.22, flag:"🇵🇹", rank:5, points:1767.85 },
+  CRO: { name:"Croatia", lat:45.10, lon:15.20, flag:"🇭🇷", rank:11, points:1714.87 },
+  SUI: { name:"Switzerland", lat:46.82, lon:8.23, flag:"🇨🇭", rank:19, points:1650.06 },
+  DZA: { name:"Algeria", lat:28.03, lon:1.66, flag:"🇩🇿", rank:28, points:1571.03 },
+  AUS: { name:"Australia", lat:-25.27, lon:133.78, flag:"🇦🇺", rank:27, points:1579.34 },
+  EGY: { name:"Egypt", lat:26.82, lon:30.80, flag:"🇪🇬", rank:29, points:1562.37 },
+  ARG: { name:"Argentina", lat:-38.42, lon:-63.62, flag:"🇦🇷", rank:1, points:1877.27 },
+  CPV: { name:"Cape Verde", lat:15.12, lon:-23.61, flag:"🇨🇻", rank:67 },
+  COL: { name:"Colombia", lat:4.57, lon:-74.30, flag:"🇨🇴", rank:13, points:1698.35 },
+  GHA: { name:"Ghana", lat:7.95, lon:-1.02, flag:"🇬🇭", rank:73 }
 };
 
 const fallbackMatches = [
@@ -862,8 +864,35 @@ function teamName(code) {
 function teamFlag(code) {
   return countryData[code]?.flag || "";
 }
+function teamRank(code) {
+  const rank = countryData[code]?.rank;
+  return rank ? `#${rank}` : "Rank N/A";
+}
+function teamPoints(code) {
+  const points = countryData[code]?.points;
+  return points ? `${points.toFixed(2)} pts` : "points N/A";
+}
+function rankedTeamName(code) {
+  if (!code) return "TBD";
+  return `${teamFlag(code)} ${teamName(code)} ${teamRank(code)}`;
+}
+function rankingComparison(m) {
+  if (!m.team1 || !m.team2) return "Rankings shown when teams are known.";
+  const r1 = countryData[m.team1]?.rank;
+  const r2 = countryData[m.team2]?.rank;
+  const p1 = countryData[m.team1]?.points;
+  const p2 = countryData[m.team2]?.points;
+  const left = `${teamFlag(m.team1)} ${teamName(m.team1)} ${r1 ? `#${r1}` : "Rank N/A"}${p1 ? ` · ${p1.toFixed(2)} pts` : ""}`;
+  const right = `${teamFlag(m.team2)} ${teamName(m.team2)} ${r2 ? `#${r2}` : "Rank N/A"}${p2 ? ` · ${p2.toFixed(2)} pts` : ""}`;
+  let note = "";
+  if (r1 && r2) {
+    const favorite = r1 < r2 ? m.team1 : r2 < r1 ? m.team2 : null;
+    note = favorite ? ` · Higher-ranked: ${teamFlag(favorite)} ${teamName(favorite)} ${teamRank(favorite)}` : " · Equal ranking";
+  }
+  return `${left} vs ${right}${note}`;
+}
 function matchLabel(m) {
-  if (m.team1 && m.team2) return `${teamName(m.team1)} vs ${teamName(m.team2)}`;
+  if (m.team1 && m.team2) return `${teamName(m.team1)} ${teamRank(m.team1)} vs ${teamName(m.team2)} ${teamRank(m.team2)}`;
   return m.placeholder || "TBD vs TBD";
 }
 function compactScore(m) {
@@ -899,6 +928,7 @@ function buildLegend() {
           <span class="match-date">${m.date.replace("2026-", "").replace(" HST", "")}</span>
         </div>
         <div class="match-meta"><span class="status-dot ${m.status}"></span><span>${m.status}</span><span>${compactScore(m)}</span></div>
+        <div class="match-meta"><span class="rank-compare">${rankingComparison(m)}</span></div>
       `;
       a.addEventListener("click", ev => {
         ev.preventDefault();
@@ -912,9 +942,13 @@ function buildLegend() {
 }
 
 function renderInfo(m) {
-  const winner = m.winner ? `<span class="winner-text">Winner: ${teamFlag(m.winner)} ${teamName(m.winner)}</span>` : `<span>No winner recorded yet</span>`;
+  const winner = m.winner ? `<span class="winner-text">Winner: ${teamFlag(m.winner)} ${teamName(m.winner)} ${teamRank(m.winner)}</span>` : `<span>No winner recorded yet</span>`;
   const advance = m.advancesTo ? `<span class="pill">Advances to match ${m.advancesTo}</span>` : "";
   const statusClass = m.status;
+  const rankingRow = m.team1 && m.team2 ? `
+      <span class="pill rank-pill">${teamFlag(m.team1)} ${teamName(m.team1)} ${teamRank(m.team1)} · ${teamPoints(m.team1)}</span>
+      <span class="pill rank-pill">${teamFlag(m.team2)} ${teamName(m.team2)} ${teamRank(m.team2)} · ${teamPoints(m.team2)}</span>
+    ` : `<span class="pill rank-pill">Rankings will appear when both teams are known</span>`;
   document.getElementById("infoCard").innerHTML = `
     <div class="info-kicker">${m.round} · Match ${m.id}</div>
     <div class="info-title">${matchLabel(m)}</div>
@@ -923,6 +957,7 @@ function renderInfo(m) {
       <span class="pill">${m.date}</span>
       ${advance}
     </div>
+    <div class="info-row">${rankingRow}</div>
     <div class="result">${scoreLine(m)}</div>
     <div class="info-row">${winner}</div>
   `;
@@ -966,7 +1001,7 @@ function drawMarkers(m) {
       .attr("class", "team-label")
       .attr("x", 13)
       .attr("y", -12)
-      .text(`${teamFlag(code)} ${teamName(code)}`);
+      .text(`${teamFlag(code)} ${teamName(code)} ${teamRank(code)}`);
     if (isWinner) drawFirework(p[0], p[1] - 28);
   }
 }
