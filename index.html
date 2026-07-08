@@ -310,7 +310,7 @@
         <div class="live-row"><span class="live-label">Source</span><span class="live-value" id="liveSource">Fallback snapshot</span></div>
       </div>
       <div class="legend-note">
-        Times are shown in Hawaii time (UTC−10). This V4 version refreshes live match data about every 60 seconds while the page is open, matches live events by team names if outside event IDs change, and rebuilds future-round matchups from winners when results become available. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
+        Times are shown in Hawaii time (UTC−10). This V5 version refreshes live match data about every 60 seconds while the page is open, checks every World Cup matchday through the Netlify function, matches live events by team names or kickoff time if outside event IDs change, and rebuilds future-round matchups from winners when results become available. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
       </div>
       <div id="legend"></div>
     </aside>
@@ -541,6 +541,34 @@ function buildResultText(m) {
   return "Scheduled. Result not available yet.";
 }
 
+function savedDateTimeKey(dateText) {
+  const match = String(dateText || "").match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return "";
+  let hour = Number(match[2]);
+  const minute = match[3];
+  const ampm = match[4].toUpperCase();
+  if (ampm === "PM" && hour !== 12) hour += 12;
+  if (ampm === "AM" && hour === 12) hour = 0;
+  return `${match[1]} ${String(hour).padStart(2, "0")}:${minute}`;
+}
+
+function eventDateTimeKeyHst(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Pacific/Honolulu",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(d);
+  const get = type => parts.find(p => p.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
 function findMetaForEspnEvent(event, parsed, staticMetaById) {
   // Prefer exact ESPN/game id matches when available.
   const eventId = String(event?.id || event?.uid || "");
@@ -555,6 +583,14 @@ function findMetaForEspnEvent(event, parsed, staticMetaById) {
       ((m.team1 === a && m.team2 === b) || (m.team1 === b && m.team2 === a))
     );
     if (teamPairMatch) return teamPairMatch;
+  }
+
+  // Final fallback: match by Hawaii kickoff date/time. This lets future-round
+  // placeholders update even when the outside feed uses a different event id.
+  const key = eventDateTimeKeyHst(event?.date || event?.competitions?.[0]?.date);
+  if (key) {
+    const byTime = fallbackMatches.find(m => savedDateTimeKey(m.date) === key);
+    if (byTime) return byTime;
   }
 
   return null;
