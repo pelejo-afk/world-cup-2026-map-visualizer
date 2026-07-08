@@ -310,7 +310,7 @@
         <div class="live-row"><span class="live-label">Source</span><span class="live-value" id="liveSource">Fallback snapshot</span></div>
       </div>
       <div class="legend-note">
-        Times are shown in Hawaii time (UTC−10). This V3 version refreshes live match data about every 60 seconds while the page is open and can match live events by team names if outside event IDs change. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
+        Times are shown in Hawaii time (UTC−10). This V4 version refreshes live match data about every 60 seconds while the page is open, matches live events by team names if outside event IDs change, and rebuilds future-round matchups from winners when results become available. If the live feed is unavailable, it falls back to the embedded schedule snapshot.
       </div>
       <div id="legend"></div>
     </aside>
@@ -607,6 +607,77 @@ function mergeMatches(baseMatches, liveMatches) {
   return baseMatches.map(m => byId.get(String(m.id)) || m);
 }
 
+const BRACKET_SLOTS = {
+  "53452513": [{ source:"53452549", outcome:"winner" }, { source:"53452551", outcome:"winner" }],
+  "53452515": [{ source:"53452553", outcome:"winner" }, { source:"53452555", outcome:"winner" }],
+  "53452521": [{ source:"53452569", outcome:"winner" }, { source:"53452503", outcome:"winner" }],
+  "53452523": [{ source:"53452505", outcome:"winner" }, { source:"53452507", outcome:"winner" }],
+
+  "53452525": [{ source:"53452509", outcome:"winner" }, { source:"53452511", outcome:"winner" }],
+  "53452527": [{ source:"53452513", outcome:"winner" }, { source:"53452515", outcome:"winner" }],
+  "53452529": [{ source:"53452517", outcome:"winner" }, { source:"53452519", outcome:"winner" }],
+  "53452531": [{ source:"53452521", outcome:"winner" }, { source:"53452523", outcome:"winner" }],
+
+  "53452533": [{ source:"53452525", outcome:"winner" }, { source:"53452527", outcome:"winner" }],
+  "53452535": [{ source:"53452529", outcome:"winner" }, { source:"53452531", outcome:"winner" }],
+
+  "53452537": [{ source:"53452533", outcome:"winner" }, { source:"53452535", outcome:"winner" }],
+  "53452539": [{ source:"53452533", outcome:"loser" }, { source:"53452535", outcome:"loser" }]
+};
+
+function resolvedTeamFromSource(sourceMatch, outcome = "winner") {
+  if (!sourceMatch || !sourceMatch.team1 || !sourceMatch.team2) return null;
+  if (outcome === "winner") return sourceMatch.winner || null;
+  if (outcome === "loser" && sourceMatch.winner) {
+    return sourceMatch.winner === sourceMatch.team1 ? sourceMatch.team2 : sourceMatch.team1;
+  }
+  return null;
+}
+
+function placeholderFromSlots(slots, byId) {
+  return slots.map(slot => {
+    const source = byId.get(String(slot.source));
+    const team = resolvedTeamFromSource(source, slot.outcome);
+    if (team) return teamName(team);
+    const sourceLabel = source?.team1 && source?.team2
+      ? `${teamName(source.team1)}/${teamName(source.team2)}`
+      : `Match ${slot.source}`;
+    return `${slot.outcome === "loser" ? "Loser" : "Winner"} of ${sourceLabel}`;
+  }).join(" vs ");
+}
+
+function applyBracketProgression(matchList) {
+  const byId = new Map(matchList.map(m => [String(m.id), { ...m }]));
+  let changed = true;
+  let guard = 0;
+
+  // Run repeatedly so a new R32 winner can fill R16, then the next completed R16
+  // can immediately fill QF, and so on during the same refresh.
+  while (changed && guard++ < 10) {
+    changed = false;
+    for (const [targetId, slots] of Object.entries(BRACKET_SLOTS)) {
+      const target = byId.get(String(targetId));
+      if (!target) continue;
+      const resolved = slots.map(slot => resolvedTeamFromSource(byId.get(String(slot.source)), slot.outcome));
+      const next = { ...target };
+
+      if (resolved[0] && next.team1 !== resolved[0]) { next.team1 = resolved[0]; changed = true; }
+      if (resolved[1] && next.team2 !== resolved[1]) { next.team2 = resolved[1]; changed = true; }
+
+      next.placeholder = placeholderFromSlots(slots, byId);
+      if (next.status === "Scheduled" && next.team1 && next.team2 && !next.externalId) {
+        next.result = `Scheduled: ${teamName(next.team1)} vs ${teamName(next.team2)}. Result not available yet.`;
+      } else if (next.status === "Scheduled" && (!next.team1 || !next.team2)) {
+        next.result = "Scheduled. Participants depend on earlier results.";
+      }
+
+      byId.set(String(targetId), next);
+    }
+  }
+
+  return matchList.map(m => byId.get(String(m.id)) || m);
+}
+
 function updateSyncUi(state, message, source = "Fallback snapshot") {
   const dot = document.getElementById("syncDot");
   const stateEl = document.getElementById("syncState");
@@ -641,7 +712,7 @@ async function refreshLiveMatches({ manual = false } = {}) {
   try {
     const currentId = selectedMatch?.id || getInitialMatchId();
     const { liveMatches, source } = await fetchLivePayload();
-    matches = mergeMatches(fallbackMatches, liveMatches);
+    matches = applyBracketProgression(mergeMatches(fallbackMatches, liveMatches));
     buildLegend();
     const nextId = matches.some(m => m.id === currentId) ? currentId : getInitialMatchId();
     selectMatch(nextId);
